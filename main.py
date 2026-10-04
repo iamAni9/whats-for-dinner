@@ -19,6 +19,17 @@ BACKBOARD_API_KEY = os.getenv("BACKBOARD_API_KEY", "")
 BACKBOARD_URL = os.getenv("BACKBOARD_URL", "https://api.backboard.io/v1")
 TINKER_SAMPLER_PATH = os.getenv("TINKER_SAMPLER_PATH", "default/sampler")
 
+# Initialize globally to save memory and avoid OOM crashes on free tier
+print("Initializing Tinker models...")
+try:
+    global_sampler = tinker.ServiceClient().create_sampling_client(model_path=TINKER_SAMPLER_PATH)
+    global_tokenizer = global_sampler.get_tokenizer()
+    global_renderer = get_renderer("role_colon", global_tokenizer)
+    print("Tinker models loaded successfully.")
+except Exception as e:
+    print(f"Warning: Failed to initialize Tinker models globally. {e}")
+    global_sampler, global_tokenizer, global_renderer = None, None, None
+
 class SuggestionRequest(BaseModel):
     pantry_items: str
 
@@ -65,26 +76,24 @@ async def suggest_meals(req: SuggestionRequest):
 
     try:
         def get_suggestions():
-            sampler = tinker.ServiceClient().create_sampling_client(model_path=TINKER_SAMPLER_PATH)
-            tokenizer = sampler.get_tokenizer()
-            renderer = get_renderer("role_colon", tokenizer)
+            if not global_sampler:
+                raise Exception("Tinker models failed to load at startup")
             
             messages = [{"role": "user", "content": prompt}]
-            prompt_input, _ = renderer.build_supervised_example(messages)
+            prompt_input, _ = global_renderer.build_supervised_example(messages)
             
             params = tinker.types.SamplingParams(max_tokens=150)
             
-            future = sampler.sample(
+            future = global_sampler.sample(
                 prompt=prompt_input,
                 num_samples=1,
                 sampling_params=params
             )
-            return future.result(), tokenizer
+            return future.result()
 
-        result, tokenizer = await asyncio.to_thread(get_suggestions)
-
+        result = await asyncio.to_thread(get_suggestions)
         
-        text_output = tokenizer.decode(result.sequences[0].tokens, skip_special_tokens=True)
+        text_output = global_tokenizer.decode(result.sequences[0].tokens, skip_special_tokens=True)
         dishes = [dish.strip("- \t\r\n") for dish in text_output.strip().split("\n") if dish.strip()]
         
         # Keep 3-4 max as requested
