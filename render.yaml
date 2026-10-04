@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: whats-for-dinner
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: BACKBOARD_URL
+        sync: false
+      - key: BACKBOARD_API_KEY
+        sync: false
+      - key: TINKER_API_KEY
+        sync: false
+      - key: TINKER_SAMPLER_PATH
+        sync: false
