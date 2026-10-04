@@ -11,6 +11,7 @@ from typing import List
 import tinker
 from tinker_cookbook.renderers import get_renderer
 from starlette.exceptions import HTTPException as StarletteHTTPException
+import asyncio
 
 app = FastAPI(title="What's for Dinner API")
 
@@ -63,21 +64,25 @@ async def suggest_meals(req: SuggestionRequest):
     )
 
     try:
-        sampler = tinker.ServiceClient().create_sampling_client(model_path=TINKER_SAMPLER_PATH)
-        tokenizer = sampler.get_tokenizer()
-        renderer = get_renderer("role_colon", tokenizer)
-        
-        messages = [{"role": "user", "content": prompt}]
-        prompt_input, _ = renderer.build_supervised_example(messages)
-        
-        params = tinker.types.SamplingParams(max_tokens=150)
-        
-        future = sampler.sample(
-            prompt=prompt_input,
-            num_samples=1,
-            sampling_params=params
-        )
-        result = future.result()
+        def get_suggestions():
+            sampler = tinker.ServiceClient().create_sampling_client(model_path=TINKER_SAMPLER_PATH)
+            tokenizer = sampler.get_tokenizer()
+            renderer = get_renderer("role_colon", tokenizer)
+            
+            messages = [{"role": "user", "content": prompt}]
+            prompt_input, _ = renderer.build_supervised_example(messages)
+            
+            params = tinker.types.SamplingParams(max_tokens=150)
+            
+            future = sampler.sample(
+                prompt=prompt_input,
+                num_samples=1,
+                sampling_params=params
+            )
+            return future.result(), tokenizer
+
+        result, tokenizer = await asyncio.to_thread(get_suggestions)
+
         
         text_output = tokenizer.decode(result.sequences[0].tokens, skip_special_tokens=True)
         dishes = [dish.strip("- \t\r\n") for dish in text_output.strip().split("\n") if dish.strip()]
